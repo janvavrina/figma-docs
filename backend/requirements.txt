@@ -1,0 +1,34 @@
+# FastAPI and server
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+python-multipart==0.0.19
+
+# HTTP client
+httpx==0.28.1
+aiofiles==24.1.0
+
+# LangChain and Ollama
+langchain==0.3.13
+langchain-ollama==0.2.2
+langchain-community==0.3.13
+langchain-chroma==0.2.0
+
+# Vector database
+chromadb==0.5.23
+
+# Configuration
+pyyaml==6.0.2
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# Scheduling
+apscheduler==3.10.4
+
+# Markdown processing
+markdown==3.7
+pygments==2.18.0
+
+# Utilities
+python-dotenv==1.0.1
+jinja2==3.1.4
+

@@ -1,0 +1,150 @@
+# Figma Documentation Generator Configuration
+
+# LLM Configuration
+llm:
+  # Default model to use when not specified
+  default_model: "gemma3:27b"
+  
+  # Model assignments for different tasks
+  models:
+    # Model for generating documentation from Figma designs
+    documentation: "gemma3:27b"
+    
+    # Model for the chatbot (RAG queries)
+    chatbot: "granite3.1-dense:8b"
+    
+    # Model for code analysis
+    code_analysis: "Phi-4-mini-instruct:latest"
+    
+    # Model for app analysis (computer use)
+    app_analysis: "gemma3:27b"
+  
+  # Ollama server configuration
+  ollama_base_url: "http://localhost:11434"
+  
+  # Generation parameters
+  generation:
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 0.9
+
+# Figma API Configuration
+figma:
+  # API token (can be overridden by environment variable FIGMA_API_TOKEN)
+  api_token: "${FIGMA_API_TOKEN}"
+  
+  # Base URL for Figma API
+  api_base_url: "https://api.figma.com"
+  
+  # Polling interval for change detection (in minutes)
+  polling_interval_minutes: 5
+  
+  # Files to watch for changes
+  watched_files: []
+  # Example:
+  # watched_files:
+  #   - file_key: "abc123xyz"
+  #     name: "Main Design System"
+  #   - file_key: "def456uvw"
+  #     name: "Mobile App Designs"
+
+# Documentation Generation
+documentation:
+  # Output directory for generated documentation
+  output_dir: "./docs"
+  
+  # Default documentation type (user, dev, both)
+  default_type: "both"
+  
+  # Default output formats
+  formats:
+    - "markdown"
+    - "html"
+  
+  # Template settings
+  templates:
+    # Include component documentation
+    include_components: true
+    
+    # Include style documentation
+    include_styles: true
+    
+    # Include interaction/prototype documentation
+    include_interactions: true
+    
+    # Include design tokens
+    include_tokens: true
+
+# Vector Database (ChromaDB) Configuration
+vector_db:
+  # ChromaDB host
+  host: "localhost"
+  
+  # ChromaDB port
+  port: 8001
+  
+  # Collection name for documentation embeddings
+  collection_name: "figma_docs"
+  
+  # Embedding model (using Ollama)
+  embedding_model: "nomic-embed-text"
+
+# Code Agent Configuration
+code_agent:
+  # File patterns to include in analysis
+  include_patterns:
+    - "**/*.py"
+    - "**/*.js"
+    - "**/*.ts"
+    - "**/*.tsx"
+    - "**/*.vue"
+    - "**/*.jsx"
+    - "**/*.css"
+    - "**/*.scss"
+    - "**/*.html"
+  
+  # Patterns to exclude
+  exclude_patterns:
+    - "**/node_modules/**"
+    - "**/__pycache__/**"
+    - "**/.git/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/*.min.js"
+    - "**/*.min.css"
+  
+  # Maximum file size to analyze (in KB)
+  max_file_size_kb: 500
+
+# App Agent Configuration (Computer Use)
+app_agent:
+  # Maximum pages to analyze
+  max_pages: 20
+  
+  # Maximum depth for crawling
+  max_depth: 3
+  
+  # Take screenshots during analysis
+  take_screenshots: true
+  
+  # Screenshot directory
+  screenshot_dir: "./docs/screenshots"
+  
+  # Wait time between actions (in seconds)
+  action_delay: 1.0
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "./logs/figma_docs.log"
+
+# Server Configuration
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  cors_origins:
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
+

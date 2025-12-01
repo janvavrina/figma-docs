@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./docs:/app/docs
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - FIGMA_API_TOKEN=${FIGMA_API_TOKEN}
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - chromadb
+    networks:
+      - figma-docs-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - figma-docs-network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    networks:
+      - figma-docs-network
+
+  # Note: Ollama should be run on host machine for GPU access
+  # If you want to run it in Docker without GPU:
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   networks:
+  #     - figma-docs-network
+
+networks:
+  figma-docs-network:
+    driver: bridge
+
+volumes:
+  chroma-data:
+  # ollama-data:
+
