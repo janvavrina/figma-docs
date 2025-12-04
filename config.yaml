@@ -3,24 +3,24 @@
 # LLM Configuration
 llm:
   # Default model to use when not specified
-  default_model: "gemma3:4b"
+  default_model: "gemma3:27b"
   
   # Model assignments for different tasks
   models:
     # Model for generating documentation from Figma designs
-    documentation: "gemma3:4b"
+    documentation: "gemma3:27b"
     
     # Model for the chatbot (RAG queries)
-    chatbot: "gemma3:4b"
+    chatbot: "gemma3:27b"
     
     # Model for code analysis
-    code_analysis: "gemma3:4b"
+    code_analysis: "gemma3:27b"
     
     # Model for app analysis (computer use)
-    app_analysis: "gemma3:4b"
+    app_analysis: "gemma3:27b"
   
-  # Ollama server configuration
-  ollama_base_url: "http://localhost:11434"
+  # Ollama server configuration (can be overridden by OLLAMA_BASE_URL env var)
+  ollama_base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"
   
   # Generation parameters
   generation:
@@ -75,19 +75,6 @@ documentation:
     # Include design tokens
     include_tokens: true
 
-# Vector Database (ChromaDB) Configuration
-vector_db:
-  # ChromaDB host
-  host: "localhost"
-  
-  # ChromaDB port
-  port: 8001
-  
-  # Collection name for documentation embeddings
-  collection_name: "figma_docs"
-  
-  # Embedding model (using Ollama)
-  embedding_model: "nomic-embed-text"
 
 # Code Agent Configuration
 code_agent:

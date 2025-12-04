@@ -6,21 +6,21 @@
 # LLM Configuration
 llm:
   # Default model to use when not specified
-  default_model: "gemma3:4b"
+  default_model: "gemma3:27b"
   
   # Model assignments for different tasks
   models:
     # Model for generating documentation from Figma designs
-    documentation: "gemma3:4b"
+    documentation: "gemma3:27b"
     
     # Model for the chatbot (RAG queries)
-    chatbot: "gemma3:4b"
+    chatbot: "gemma3:27b"
     
     # Model for code analysis
-    code_analysis: "gemma3:4b"
+    code_analysis: "gemma3:27b"
     
     # Model for app analysis (computer use)
-    app_analysis: "gemma3:4b"
+    app_analysis: "gemma3:27b"
   
   # Ollama server configuration
   # CHANGE THIS to your external Ollama URL

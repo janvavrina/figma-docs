@@ -4,8 +4,8 @@ import logging
 from typing import Any, Optional
 
 import httpx
-from langchain_ollama import OllamaLLM, OllamaEmbeddings
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_ollama import OllamaLLM
+from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 from app.core.config import settings
@@ -35,7 +35,6 @@ class LLMService:
         self.base_url = base_url or settings.llm.ollama_base_url
         self.default_model = model or settings.llm.default_model
         self._models: dict[str, OllamaLLM] = {}
-        self._embeddings: Optional[OllamaEmbeddings] = None
         
         # Check if using ngrok URL
         self._is_ngrok = "ngrok" in self.base_url.lower() if self.base_url else False
@@ -69,22 +68,6 @@ class LLMService:
             logger.info(f"Initialized Ollama model: {model} (ngrok: {self._is_ngrok})")
         
         return self._models[model]
-    
-    def get_embeddings(self) -> OllamaEmbeddings:
-        """Get the embeddings model.
-        
-        Returns:
-            OllamaEmbeddings instance.
-        """
-        if self._embeddings is None:
-            self._embeddings = OllamaEmbeddings(
-                model=settings.vector_db.embedding_model,
-                base_url=self.base_url,
-                headers=self._get_headers(),
-            )
-            logger.info(f"Initialized embeddings model: {settings.vector_db.embedding_model}")
-        
-        return self._embeddings
     
     async def generate(
         self,
@@ -432,7 +415,7 @@ Format the output as Markdown."""
         """Pull (download) a model from Ollama registry.
         
         Args:
-            model_name: Name of the model to pull (e.g., "gemma3:4b").
+            model_name: Name of the model to pull (e.g., "gemma3:27b").
             
         Returns:
             Status information about the pull operation.
@@ -507,7 +490,6 @@ Format the output as Markdown."""
             settings.llm.models.chatbot,
             settings.llm.models.code_analysis,
             settings.llm.models.app_analysis,
-            settings.vector_db.embedding_model,
         ])
         
         results = {
@@ -544,15 +526,20 @@ Format the output as Markdown."""
         Returns:
             Server status information.
         """
+        logger.info(f"Checking Ollama status at: {self.base_url} (ngrok: {self._is_ngrok})")
+        
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=15.0) as client:
                 # Check if server is reachable
-                response = await client.get(
-                    f"{self.base_url}/api/tags",
-                    headers=self._get_headers(),
-                )
+                url = f"{self.base_url}/api/tags"
+                headers = self._get_headers()
+                logger.debug(f"Request URL: {url}, Headers: {headers}")
+                
+                response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 models = response.json().get("models", [])
+                
+                logger.info(f"Ollama online with {len(models)} models")
                 
                 return {
                     "status": "online",
@@ -561,16 +548,28 @@ Format the output as Markdown."""
                     "models_count": len(models),
                     "models": [m.get("name") for m in models],
                 }
-        except httpx.ConnectError:
+        except httpx.ConnectError as e:
+            logger.error(f"Cannot connect to Ollama at {self.base_url}: {e}")
             return {
                 "status": "offline",
                 "url": self.base_url,
-                "error": "Cannot connect to Ollama server",
+                "is_ngrok": self._is_ngrok,
+                "error": f"Cannot connect to Ollama server: {e}",
             }
-        except Exception as e:
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error from Ollama: {e.response.status_code} - {e.response.text}")
             return {
                 "status": "error",
                 "url": self.base_url,
+                "is_ngrok": self._is_ngrok,
+                "error": f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+            }
+        except Exception as e:
+            logger.error(f"Error checking Ollama status: {e}")
+            return {
+                "status": "error",
+                "url": self.base_url,
+                "is_ngrok": self._is_ngrok,
                 "error": str(e),
             }
 

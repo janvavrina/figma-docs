@@ -51,11 +51,62 @@ async def get_status() -> dict[str, Any]:
     }
 
 
+# --- Figma Team/Project Browser ---
+
+@router.get("/figma/me")
+async def get_figma_user() -> dict[str, Any]:
+    """Get current Figma user info (to verify API token)."""
+    figma = FigmaService()
+    try:
+        user = await figma.get_me()
+        return user
+    except Exception as e:
+        logger.error(f"Error fetching Figma user: {e}")
+        raise HTTPException(status_code=401, detail=f"Invalid Figma API token or connection error: {e}")
+    finally:
+        await figma.close()
+
+
+@router.get("/figma/teams/{team_id}/projects")
+async def get_team_projects(team_id: str) -> list[dict[str, Any]]:
+    """Get all projects in a Figma team."""
+    figma = FigmaService()
+    try:
+        projects = await figma.get_team_projects(team_id)
+        return projects
+    except Exception as e:
+        logger.error(f"Error fetching team projects for team {team_id}: {e}")
+        error_msg = str(e)
+        if "403" in error_msg:
+            raise HTTPException(status_code=403, detail="Access denied. Make sure your API token has access to this team.")
+        elif "404" in error_msg:
+            raise HTTPException(status_code=404, detail=f"Team not found. Check if team ID '{team_id}' is correct.")
+        elif "401" in error_msg:
+            raise HTTPException(status_code=401, detail="Invalid API token. Check your FIGMA_API_TOKEN.")
+        raise HTTPException(status_code=400, detail=f"Could not fetch team projects: {e}")
+    finally:
+        await figma.close()
+
+
+@router.get("/figma/projects/{project_id}/files")
+async def get_project_files(project_id: str) -> list[dict[str, Any]]:
+    """Get all files in a Figma project."""
+    figma = FigmaService()
+    try:
+        files = await figma.get_project_files(project_id)
+        return files
+    except Exception as e:
+        logger.error(f"Error fetching project files: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not fetch project files: {e}")
+    finally:
+        await figma.close()
+
+
 # --- Figma Files ---
 
 class AddWatchedFileRequest(BaseModel):
     file_key: str
-    name: str
+    name: str = ""
 
 
 @router.get("/figma/files")

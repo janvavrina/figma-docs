@@ -54,6 +54,71 @@ class FigmaService:
         if self._client and not self._client.is_closed:
             await self._client.aclose()
     
+    async def get_me(self) -> dict[str, Any]:
+        """Get current user info to verify API token.
+        
+        Returns:
+            User info dictionary with id, email, handle.
+        """
+        client = await self._get_client()
+        
+        response = await client.get("/v1/me")
+        response.raise_for_status()
+        
+        return response.json()
+    
+    async def get_team_projects(self, team_id: str) -> list[dict[str, Any]]:
+        """Get all projects in a team.
+        
+        Args:
+            team_id: The team ID.
+            
+        Returns:
+            List of project dictionaries with id and name.
+        """
+        client = await self._get_client()
+        
+        response = await client.get(f"/v1/teams/{team_id}/projects")
+        response.raise_for_status()
+        
+        data = response.json()
+        projects = []
+        
+        for project in data.get("projects", []):
+            projects.append({
+                "id": project.get("id"),
+                "name": project.get("name", "Unnamed Project"),
+            })
+        
+        return projects
+    
+    async def get_project_files(self, project_id: str) -> list[dict[str, Any]]:
+        """Get all files in a project.
+        
+        Args:
+            project_id: The project ID.
+            
+        Returns:
+            List of file dictionaries with key, name, thumbnail_url, last_modified.
+        """
+        client = await self._get_client()
+        
+        response = await client.get(f"/v1/projects/{project_id}/files")
+        response.raise_for_status()
+        
+        data = response.json()
+        files = []
+        
+        for file_data in data.get("files", []):
+            files.append({
+                "key": file_data.get("key"),
+                "name": file_data.get("name", "Unnamed File"),
+                "thumbnail_url": file_data.get("thumbnail_url"),
+                "last_modified": file_data.get("last_modified"),
+            })
+        
+        return files
+    
     async def get_file(self, file_key: str, version: Optional[str] = None) -> FigmaFile:
         """Get a Figma file by key.
         

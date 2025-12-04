@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build:
@@ -15,7 +13,6 @@ services:
       - FIGMA_API_TOKEN=${FIGMA_API_TOKEN}
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      - chromadb
       - ollama
     networks:
       - figma-docs-network
@@ -31,15 +28,6 @@ services:
       - /app/node_modules
     depends_on:
       - backend
-    networks:
-      - figma-docs-network
-
-  chromadb:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma-data:/chroma/chroma
     networks:
       - figma-docs-network
 
@@ -76,8 +64,6 @@ services:
       - |
         echo "Pulling required models..."
         ollama pull gemma3:27b || echo "Failed to pull gemma3:27b"
-        ollama pull granite3.1-dense:8b || echo "Failed to pull granite3.1-dense:8b"
-        ollama pull nomic-embed-text || echo "Failed to pull nomic-embed-text"
         echo "Model pulling complete!"
     environment:
       - OLLAMA_HOST=ollama:11434
@@ -113,5 +99,4 @@ networks:
     driver: bridge
 
 volumes:
-  chroma-data:
   ollama-data:

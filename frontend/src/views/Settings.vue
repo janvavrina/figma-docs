@@ -168,7 +168,7 @@ const formatSize = (bytes: number) => {
             <input
               v-model="pullModelName"
               type="text"
-              placeholder="e.g., gemma3:4b, llama3.2:3b"
+              placeholder="e.g., gemma3:27b, llama3.2:3b"
               class="flex-1 bg-bg-tertiary border border-border rounded-xl px-4 py-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent"
               :disabled="isPulling"
             />

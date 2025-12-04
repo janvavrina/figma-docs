@@ -8,13 +8,8 @@ httpx==0.28.1
 aiofiles==24.1.0
 
 # LangChain and Ollama
-langchain==0.3.13
+langchain-core==0.3.28
 langchain-ollama==0.2.2
-langchain-community==0.3.13
-langchain-chroma==0.2.0
-
-# Vector database
-chromadb==0.5.23
 
 # Configuration
 pyyaml==6.0.2
@@ -31,4 +26,3 @@ pygments==2.18.0
 # Utilities
 python-dotenv==1.0.1
 jinja2==3.1.4
-

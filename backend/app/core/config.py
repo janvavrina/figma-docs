@@ -67,14 +67,6 @@ class DocumentationConfig(BaseModel):
     templates: DocumentationTemplatesConfig = Field(default_factory=DocumentationTemplatesConfig)
 
 
-class VectorDBConfig(BaseModel):
-    """Vector database (ChromaDB) configuration."""
-    host: str = "localhost"
-    port: int = 8001
-    collection_name: str = "figma_docs"
-    embedding_model: str = "nomic-embed-text"
-
-
 class CodeAgentConfig(BaseModel):
     """Code agent configuration."""
     include_patterns: list[str] = Field(default_factory=lambda: [
@@ -126,9 +118,6 @@ class Settings(BaseSettings):
     # Documentation settings
     documentation: DocumentationConfig = Field(default_factory=DocumentationConfig)
     
-    # Vector DB settings
-    vector_db: VectorDBConfig = Field(default_factory=VectorDBConfig)
-    
     # Code agent settings
     code_agent: CodeAgentConfig = Field(default_factory=CodeAgentConfig)
     
@@ -170,10 +159,14 @@ class Settings(BaseSettings):
         elif isinstance(data, list):
             return [cls._process_env_vars(item) for item in data]
         elif isinstance(data, str):
-            # Check for ${VAR_NAME} pattern
+            # Check for ${VAR_NAME} pattern with optional default ${VAR_NAME:-default}
             if data.startswith("${") and data.endswith("}"):
-                var_name = data[2:-1]
-                return os.environ.get(var_name, "")
+                inner = data[2:-1]
+                if ":-" in inner:
+                    var_name, default = inner.split(":-", 1)
+                    return os.environ.get(var_name, default)
+                else:
+                    return os.environ.get(inner, "")
             return data
         return data
     
@@ -204,8 +197,18 @@ def load_settings(config_path: Optional[str | Path] = None) -> Settings:
                 break
     
     if config_path:
-        return Settings.from_yaml(config_path)
-    return Settings()
+        settings_obj = Settings.from_yaml(config_path)
+    else:
+        settings_obj = Settings()
+    
+    # Override with environment variables if set
+    if os.environ.get("OLLAMA_BASE_URL"):
+        settings_obj.llm.ollama_base_url = os.environ["OLLAMA_BASE_URL"]
+    
+    if os.environ.get("FIGMA_API_TOKEN"):
+        settings_obj.figma.api_token = os.environ["FIGMA_API_TOKEN"]
+    
+    return settings_obj
 
 
 # Global settings instance
