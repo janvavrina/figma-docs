@@ -1,4 +1,7 @@
 # Figma Documentation Generator Configuration
+# Configuration for EXTERNAL Ollama instance
+#
+# Copy this to config.yaml and update ollama_base_url to your external Ollama URL
 
 # LLM Configuration
 llm:
@@ -20,7 +23,8 @@ llm:
     app_analysis: "gemma3:4b"
   
   # Ollama server configuration
-  ollama_base_url: "http://localhost:11434"
+  # CHANGE THIS to your external Ollama URL
+  ollama_base_url: "${OLLAMA_BASE_URL}"
   
   # Generation parameters
   generation:
@@ -41,12 +45,6 @@ figma:
   
   # Files to watch for changes
   watched_files: []
-  # Example:
-  # watched_files:
-  #   - file_key: "abc123xyz"
-  #     name: "Main Design System"
-  #   - file_key: "def456uvw"
-  #     name: "Mobile App Designs"
 
 # Documentation Generation
 documentation:
@@ -63,35 +61,21 @@ documentation:
   
   # Template settings
   templates:
-    # Include component documentation
     include_components: true
-    
-    # Include style documentation
     include_styles: true
-    
-    # Include interaction/prototype documentation
     include_interactions: true
-    
-    # Include design tokens
     include_tokens: true
 
 # Vector Database (ChromaDB) Configuration
 vector_db:
-  # ChromaDB host
-  host: "localhost"
-  
-  # ChromaDB port
-  port: 8001
-  
-  # Collection name for documentation embeddings
+  # ChromaDB host - use "chromadb" when running in Docker
+  host: "chromadb"
+  port: 8000
   collection_name: "figma_docs"
-  
-  # Embedding model (using Ollama)
   embedding_model: "nomic-embed-text"
 
 # Code Agent Configuration
 code_agent:
-  # File patterns to include in analysis
   include_patterns:
     - "**/*.py"
     - "**/*.js"
@@ -102,8 +86,6 @@ code_agent:
     - "**/*.css"
     - "**/*.scss"
     - "**/*.html"
-  
-  # Patterns to exclude
   exclude_patterns:
     - "**/node_modules/**"
     - "**/__pycache__/**"
@@ -112,25 +94,14 @@ code_agent:
     - "**/build/**"
     - "**/*.min.js"
     - "**/*.min.css"
-  
-  # Maximum file size to analyze (in KB)
   max_file_size_kb: 500
 
-# App Agent Configuration (Computer Use)
+# App Agent Configuration
 app_agent:
-  # Maximum pages to analyze
   max_pages: 20
-  
-  # Maximum depth for crawling
   max_depth: 3
-  
-  # Take screenshots during analysis
   take_screenshots: true
-  
-  # Screenshot directory
   screenshot_dir: "./docs/screenshots"
-  
-  # Wait time between actions (in seconds)
   action_delay: 1.0
 
 # Logging Configuration

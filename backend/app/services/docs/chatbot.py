@@ -14,6 +14,11 @@ from app.services.llm import LLMService, get_llm_service
 
 logger = logging.getLogger(__name__)
 
+# Headers for ngrok tunnel (skip browser warning)
+NGROK_HEADERS = {
+    "ngrok-skip-browser-warning": "true",
+}
+
 
 class DocumentationChatbot:
     """RAG-based chatbot for querying documentation."""
@@ -39,6 +44,15 @@ class DocumentationChatbot:
             chunk_overlap=200,
             separators=["\n## ", "\n### ", "\n#### ", "\n\n", "\n", " ", ""],
         )
+        
+        # Check if using ngrok URL
+        self._is_ngrok = "ngrok" in settings.llm.ollama_base_url.lower()
+    
+    def _get_headers(self) -> dict[str, str]:
+        """Get headers for Ollama requests (includes ngrok headers if needed)."""
+        if self._is_ngrok:
+            return NGROK_HEADERS.copy()
+        return {}
     
     def _get_embeddings(self) -> OllamaEmbeddings:
         """Get or create embeddings model."""
@@ -46,6 +60,7 @@ class DocumentationChatbot:
             self._embeddings = OllamaEmbeddings(
                 model=settings.vector_db.embedding_model,
                 base_url=settings.llm.ollama_base_url,
+                headers=self._get_headers(),
             )
         return self._embeddings
     

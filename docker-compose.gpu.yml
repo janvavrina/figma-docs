@@ -1,5 +1,11 @@
 version: '3.8'
 
+# Docker Compose with NVIDIA GPU support for Ollama
+# Requires: NVIDIA Container Toolkit installed
+#
+# Usage:
+#   docker-compose -f docker-compose.gpu.yml up -d
+
 services:
   backend:
     build:
@@ -15,8 +21,10 @@ services:
       - FIGMA_API_TOKEN=${FIGMA_API_TOKEN}
       - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
-      - chromadb
-      - ollama
+      ollama:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
     networks:
       - figma-docs-network
 
@@ -43,8 +51,7 @@ services:
     networks:
       - figma-docs-network
 
-  # Ollama - CPU version (no GPU)
-  # For GPU support, use the commented section below
+  # Ollama with NVIDIA GPU support
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -53,7 +60,13 @@ services:
       - ollama-data:/root/.ollama
     networks:
       - figma-docs-network
-    # Healthcheck to ensure Ollama is ready
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
       interval: 30s
@@ -61,7 +74,7 @@ services:
       retries: 5
       start_period: 10s
 
-  # Ollama model puller - pulls required models on startup
+  # Model puller - runs once to download models
   ollama-pull:
     image: ollama/ollama:latest
     volumes:
@@ -82,32 +95,6 @@ services:
     environment:
       - OLLAMA_HOST=ollama:11434
 
-  # === GPU VERSION (NVIDIA) ===
-  # Uncomment this section and comment out the CPU ollama service above
-  # to use GPU acceleration with NVIDIA GPUs
-  #
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama-data:/root/.ollama
-  #   networks:
-  #     - figma-docs-network
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 10s
-
 networks:
   figma-docs-network:
     driver: bridge
@@ -115,3 +102,4 @@ networks:
 volumes:
   chroma-data:
   ollama-data:
+

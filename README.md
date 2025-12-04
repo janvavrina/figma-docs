@@ -135,13 +135,51 @@ figma-docs/
 
 ## Docker
 
-Pro spuštění s Dockerem:
+### Varianta 1: S lokální Ollama v Dockeru (CPU)
 
 ```bash
 docker-compose up -d
 ```
 
-**Poznámka:** Ollama by měla běžet na hostitelském stroji pro přístup k GPU.
+### Varianta 2: S externí Ollama (běží jinde nebo přes ngrok)
+
+Pokud máš Ollama běžící na jiném stroji nebo přes ngrok tunel:
+
+```bash
+# Nastav URL externí Ollama v .env
+# Pro ngrok:
+echo "OLLAMA_BASE_URL=https://xxxx-xx-xx-xx-xx.ngrok-free.app" >> .env
+# Nebo pro lokální síť:
+echo "OLLAMA_BASE_URL=http://192.168.1.100:11434" >> .env
+
+# Spusť s externím Ollama compose souborem
+docker-compose -f docker-compose.external-ollama.yml up -d
+```
+
+**Poznámka:** Aplikace automaticky detekuje ngrok URL a přidává `ngrok-skip-browser-warning` header.
+
+### Varianta 3: S GPU podporou (NVIDIA)
+
+Vyžaduje nainstalovaný [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html):
+
+```bash
+docker-compose -f docker-compose.gpu.yml up -d
+```
+
+### Docker Compose soubory
+
+| Soubor | Popis |
+|--------|-------|
+| `docker-compose.yml` | Výchozí - Ollama v Dockeru (CPU) |
+| `docker-compose.external-ollama.yml` | Pro externí Ollama instanci |
+| `docker-compose.gpu.yml` | S NVIDIA GPU podporou |
+
+### Konfigurace pro Docker
+
+Pro Docker s externí Ollama použij `config.external-ollama.yaml`:
+```bash
+cp config.external-ollama.yaml config.yaml
+```
 
 ## Licence
 

@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Optional
 
+import httpx
 from langchain_ollama import OllamaLLM, OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -10,6 +11,11 @@ from langchain_core.output_parsers import StrOutputParser
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Headers for ngrok tunnel (skip browser warning)
+NGROK_HEADERS = {
+    "ngrok-skip-browser-warning": "true",
+}
 
 
 class LLMService:
@@ -30,6 +36,15 @@ class LLMService:
         self.default_model = model or settings.llm.default_model
         self._models: dict[str, OllamaLLM] = {}
         self._embeddings: Optional[OllamaEmbeddings] = None
+        
+        # Check if using ngrok URL
+        self._is_ngrok = "ngrok" in self.base_url.lower() if self.base_url else False
+    
+    def _get_headers(self) -> dict[str, str]:
+        """Get headers for Ollama requests (includes ngrok headers if needed)."""
+        if self._is_ngrok:
+            return NGROK_HEADERS.copy()
+        return {}
     
     def _get_model(self, model_name: Optional[str] = None) -> OllamaLLM:
         """Get or create an Ollama model instance.
@@ -49,8 +64,9 @@ class LLMService:
                 temperature=settings.llm.generation.temperature,
                 num_predict=settings.llm.generation.max_tokens,
                 top_p=settings.llm.generation.top_p,
+                headers=self._get_headers(),
             )
-            logger.info(f"Initialized Ollama model: {model}")
+            logger.info(f"Initialized Ollama model: {model} (ngrok: {self._is_ngrok})")
         
         return self._models[model]
     
@@ -64,6 +80,7 @@ class LLMService:
             self._embeddings = OllamaEmbeddings(
                 model=settings.vector_db.embedding_model,
                 base_url=self.base_url,
+                headers=self._get_headers(),
             )
             logger.info(f"Initialized embeddings model: {settings.vector_db.embedding_model}")
         
@@ -394,6 +411,168 @@ Format the output as Markdown."""
         }
         
         return await self.generate_with_template(template, variables, model)
+
+
+    async def list_models(self) -> list[dict[str, Any]]:
+        """List all available models on the Ollama server.
+        
+        Returns:
+            List of model information dictionaries.
+        """
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self.base_url}/api/tags",
+                headers=self._get_headers(),
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("models", [])
+    
+    async def pull_model(self, model_name: str) -> dict[str, Any]:
+        """Pull (download) a model from Ollama registry.
+        
+        Args:
+            model_name: Name of the model to pull (e.g., "gemma3:4b").
+            
+        Returns:
+            Status information about the pull operation.
+        """
+        logger.info(f"Pulling model: {model_name}")
+        
+        async with httpx.AsyncClient(timeout=600.0) as client:  # 10 min timeout for large models
+            response = await client.post(
+                f"{self.base_url}/api/pull",
+                json={"name": model_name, "stream": False},
+                headers=self._get_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+    
+    async def pull_model_stream(self, model_name: str):
+        """Pull a model with streaming progress updates.
+        
+        Args:
+            model_name: Name of the model to pull.
+            
+        Yields:
+            Progress updates as dictionaries.
+        """
+        logger.info(f"Pulling model (streaming): {model_name}")
+        
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream(
+                "POST",
+                f"{self.base_url}/api/pull",
+                json={"name": model_name, "stream": True},
+                headers=self._get_headers(),
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line:
+                        import json
+                        yield json.loads(line)
+    
+    async def check_model_exists(self, model_name: str) -> bool:
+        """Check if a model exists on the Ollama server.
+        
+        Args:
+            model_name: Name of the model to check.
+            
+        Returns:
+            True if model exists, False otherwise.
+        """
+        try:
+            models = await self.list_models()
+            model_names = [m.get("name", "") for m in models]
+            # Check both exact match and without tag
+            base_name = model_name.split(":")[0]
+            return any(
+                model_name == name or 
+                model_name in name or 
+                base_name in name 
+                for name in model_names
+            )
+        except Exception as e:
+            logger.error(f"Error checking model existence: {e}")
+            return False
+    
+    async def ensure_models_available(self) -> dict[str, Any]:
+        """Ensure all configured models are available, pulling if necessary.
+        
+        Returns:
+            Status report of model availability and pull operations.
+        """
+        required_models = set([
+            settings.llm.models.documentation,
+            settings.llm.models.chatbot,
+            settings.llm.models.code_analysis,
+            settings.llm.models.app_analysis,
+            settings.vector_db.embedding_model,
+        ])
+        
+        results = {
+            "checked": [],
+            "already_available": [],
+            "pulled": [],
+            "failed": [],
+        }
+        
+        for model in required_models:
+            results["checked"].append(model)
+            
+            try:
+                exists = await self.check_model_exists(model)
+                
+                if exists:
+                    results["already_available"].append(model)
+                    logger.info(f"Model already available: {model}")
+                else:
+                    logger.info(f"Model not found, pulling: {model}")
+                    await self.pull_model(model)
+                    results["pulled"].append(model)
+                    logger.info(f"Successfully pulled: {model}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to ensure model {model}: {e}")
+                results["failed"].append({"model": model, "error": str(e)})
+        
+        return results
+    
+    async def get_ollama_status(self) -> dict[str, Any]:
+        """Get Ollama server status and information.
+        
+        Returns:
+            Server status information.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Check if server is reachable
+                response = await client.get(
+                    f"{self.base_url}/api/tags",
+                    headers=self._get_headers(),
+                )
+                response.raise_for_status()
+                models = response.json().get("models", [])
+                
+                return {
+                    "status": "online",
+                    "url": self.base_url,
+                    "is_ngrok": self._is_ngrok,
+                    "models_count": len(models),
+                    "models": [m.get("name") for m in models],
+                }
+        except httpx.ConnectError:
+            return {
+                "status": "offline",
+                "url": self.base_url,
+                "error": "Cannot connect to Ollama server",
+            }
+        except Exception as e:
+            return {
+                "status": "error",
+                "url": self.base_url,
+                "error": str(e),
+            }
 
 
 # Global LLM service instance

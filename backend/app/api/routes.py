@@ -321,6 +321,100 @@ async def analyze_app(request: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- Ollama Models ---
+
+@router.get("/ollama/status")
+async def get_ollama_status() -> dict[str, Any]:
+    """Get Ollama server status and available models."""
+    llm_service = get_llm_service()
+    return await llm_service.get_ollama_status()
+
+
+@router.get("/ollama/models")
+async def list_ollama_models() -> dict[str, Any]:
+    """List all models available on the Ollama server."""
+    llm_service = get_llm_service()
+    
+    try:
+        models = await llm_service.list_models()
+        return {
+            "models": models,
+            "count": len(models),
+        }
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class PullModelRequest(BaseModel):
+    model_name: str
+
+
+@router.post("/ollama/models/pull")
+async def pull_ollama_model(
+    request: PullModelRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Pull (download) a model from Ollama registry."""
+    llm_service = get_llm_service()
+    
+    try:
+        # Check if model already exists
+        exists = await llm_service.check_model_exists(request.model_name)
+        if exists:
+            return {
+                "status": "already_available",
+                "model": request.model_name,
+                "message": f"Model {request.model_name} is already available",
+            }
+        
+        # Pull model (this can take a while)
+        logger.info(f"Starting model pull: {request.model_name}")
+        result = await llm_service.pull_model(request.model_name)
+        
+        return {
+            "status": "success",
+            "model": request.model_name,
+            "message": f"Successfully pulled {request.model_name}",
+            "details": result,
+        }
+    except Exception as e:
+        logger.error(f"Error pulling model {request.model_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ollama/models/ensure")
+async def ensure_required_models() -> dict[str, Any]:
+    """Ensure all required models are available, pulling if necessary."""
+    llm_service = get_llm_service()
+    
+    try:
+        result = await llm_service.ensure_models_available()
+        return {
+            "status": "complete",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Error ensuring models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ollama/models/{model_name}/exists")
+async def check_model_exists(model_name: str) -> dict[str, Any]:
+    """Check if a specific model exists on the Ollama server."""
+    llm_service = get_llm_service()
+    
+    try:
+        exists = await llm_service.check_model_exists(model_name)
+        return {
+            "model": model_name,
+            "exists": exists,
+        }
+    except Exception as e:
+        logger.error(f"Error checking model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- Configuration ---
 
 @router.get("/config")
