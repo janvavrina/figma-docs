@@ -22,6 +22,7 @@ class LLMModelsConfig(BaseModel):
     chatbot: str = "granite3.1-dense:8b"
     code_analysis: str = "Phi-4-mini-instruct:latest"
     app_analysis: str = "gemma3:27b"
+    vision: str = "qwen3-vl:8b"
 
 
 class LLMConfig(BaseModel):
@@ -178,6 +179,7 @@ class Settings(BaseSettings):
             "chatbot": models.chatbot,
             "code_analysis": models.code_analysis,
             "app_analysis": models.app_analysis,
+            "vision": models.vision,
         }
         return model_map.get(task, self.llm.default_model)
 

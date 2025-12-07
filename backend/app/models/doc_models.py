@@ -69,6 +69,14 @@ class GenerateDocsRequest(BaseModel):
     include_interactions: bool = True
 
 
+class GenerateVisionDocsRequest(BaseModel):
+    """Request to generate documentation using vision model."""
+    file_key: str
+    doc_type: DocType = DocType.BOTH
+    formats: list[DocFormat] = Field(default_factory=lambda: [DocFormat.MARKDOWN, DocFormat.HTML])
+    vision_model: Optional[str] = None  # Optional override, uses config default if not provided
+
+
 class ChatRequest(BaseModel):
     """Request for chatbot interaction."""
     message: str

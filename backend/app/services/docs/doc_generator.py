@@ -314,6 +314,200 @@ class DocGenerator:
         
         return doc
     
+    def _extract_frame_ids(self, figma_file) -> list[tuple[str, str]]:
+        """Extract all frame IDs and names from a Figma file.
+        
+        Args:
+            figma_file: FigmaFile object.
+            
+        Returns:
+            List of tuples (frame_id, frame_name).
+        """
+        frame_ids = []
+        
+        if figma_file.document:
+            for page in figma_file.document.children:
+                for child in page.children:
+                    if child.type == "FRAME":
+                        frame_ids.append((child.id, child.name))
+        
+        return frame_ids
+    
+    async def generate_from_figma_vision(
+        self,
+        file_key: str,
+        doc_type: DocType = DocType.BOTH,
+        formats: list[DocFormat] = None,
+        vision_model: Optional[str] = None,
+    ) -> Documentation:
+        """Generate documentation from a Figma file using vision model.
+        
+        This method exports frames as PNG images and sends them to a vision LLM
+        for visual analysis and documentation generation.
+        
+        Args:
+            file_key: Figma file key.
+            doc_type: Type of documentation to generate.
+            formats: Output formats (markdown, html).
+            vision_model: Vision model name (e.g., "qwen3-vl:8b").
+            
+        Returns:
+            Generated Documentation object.
+        """
+        formats = formats or [DocFormat.MARKDOWN, DocFormat.HTML]
+        
+        logger.info(f"Generating {doc_type.value} documentation using vision model for file {file_key}")
+        
+        # Fetch Figma file
+        figma_file = await self.figma_service.get_file(file_key)
+        
+        # Extract all frame IDs
+        frame_ids = self._extract_frame_ids(figma_file)
+        
+        if not frame_ids:
+            logger.warning(f"No frames found in file {file_key}")
+            # Fallback to regular generation
+            return await self.generate_from_figma(file_key, doc_type, formats)
+        
+        logger.info(f"Found {len(frame_ids)} frames to analyze")
+        
+        # Download images for all frames
+        node_ids = [frame_id for frame_id, _ in frame_ids]
+        frame_images = await self.figma_service.download_images(
+            file_key, node_ids, format="png", scale=2.0
+        )
+        
+        if not frame_images:
+            logger.warning(f"Could not download any images for file {file_key}")
+            # Fallback to regular generation
+            return await self.generate_from_figma(file_key, doc_type, formats)
+        
+        logger.info(f"Downloaded {len(frame_images)} frame images")
+        
+        # Generate documentation for each frame using vision model
+        frame_descriptions = []
+        
+        for frame_id, frame_name in frame_ids:
+            if frame_id not in frame_images:
+                logger.warning(f"Image not available for frame {frame_id} ({frame_name})")
+                continue
+            
+            image_bytes = frame_images[frame_id]
+            
+            # Create prompt based on doc_type
+            if doc_type == DocType.USER:
+                prompt = f"""Analyze this UI design frame named "{frame_name}" and describe it from a user's perspective.
+
+Describe:
+1. What this screen/page is for
+2. What UI elements are visible and their purpose
+3. How users would interact with this screen
+4. Any important visual elements, colors, or layout patterns
+5. User workflows or navigation hints
+
+Write in a friendly, accessible tone suitable for end users."""
+            elif doc_type == DocType.DEVELOPER:
+                prompt = f"""Analyze this UI design frame named "{frame_name}" and describe it from a developer's perspective.
+
+Describe:
+1. Component structure and layout
+2. Visual design tokens (colors, spacing, typography)
+3. Component specifications (dimensions, styles)
+4. Interaction states and behaviors visible
+5. Implementation guidelines and technical details
+
+Write in a technical tone suitable for developers."""
+            else:  # BOTH
+                prompt = f"""Analyze this UI design frame named "{frame_name}" and provide comprehensive documentation.
+
+Provide BOTH user and developer perspectives:
+
+## User Perspective:
+- What this screen/page is for
+- What UI elements are visible and their purpose
+- How users would interact with this screen
+- User workflows and navigation
+
+## Developer Perspective:
+- Component structure and layout
+- Design tokens (colors, spacing, typography)
+- Component specifications
+- Implementation guidelines
+
+Write clearly with appropriate sections for each audience."""
+            
+            try:
+                logger.info(f"Analyzing frame {frame_name} ({frame_id}) with vision model")
+                description = await self.llm_service.generate_with_image(
+                    prompt=prompt,
+                    images=[image_bytes],
+                    model=vision_model,
+                )
+                
+                frame_descriptions.append({
+                    "id": frame_id,
+                    "name": frame_name,
+                    "description": description,
+                })
+                logger.info(f"Completed analysis for frame {frame_name}")
+                
+            except Exception as e:
+                logger.error(f"Error analyzing frame {frame_id} ({frame_name}): {e}")
+                # Continue with other frames
+                continue
+        
+        if not frame_descriptions:
+            logger.warning("No frame descriptions generated, falling back to regular generation")
+            return await self.generate_from_figma(file_key, doc_type, formats)
+        
+        # Aggregate descriptions into markdown documentation
+        markdown_sections = []
+        
+        # Add header
+        markdown_sections.append(f"# {figma_file.name} Documentation\n")
+        markdown_sections.append(f"*Generated using vision model analysis*\n")
+        markdown_sections.append(f"**File:** {figma_file.name}  \n")
+        markdown_sections.append(f"**Version:** {figma_file.version}  \n")
+        markdown_sections.append(f"**Documentation Type:** {doc_type.value}\n")
+        markdown_sections.append("---\n")
+        
+        # Group frames by page (if we can determine pages)
+        # For now, just list all frames
+        markdown_sections.append("## Frames and Screens\n")
+        
+        for i, frame_desc in enumerate(frame_descriptions, 1):
+            markdown_sections.append(f"### {i}. {frame_desc['name']}\n")
+            markdown_sections.append(f"*Frame ID: {frame_desc['id']}*\n")
+            markdown_sections.append(f"\n{frame_desc['description']}\n")
+            markdown_sections.append("\n---\n")
+        
+        # Add summary section
+        markdown_sections.append("## Summary\n")
+        markdown_sections.append(f"This design contains {len(frame_descriptions)} frame(s) analyzed using vision model.\n")
+        
+        markdown_content = "\n".join(markdown_sections)
+        
+        # Create documentation object
+        doc = Documentation(
+            id=str(uuid.uuid4()),
+            figma_file_key=file_key,
+            figma_file_name=figma_file.name,
+            title=f"{figma_file.name} Documentation (Vision)",
+            description=f"Auto-generated {doc_type.value} documentation using vision model",
+            doc_type=doc_type,
+            figma_version=figma_file.version,
+        )
+        
+        # Parse markdown into sections
+        doc.sections = self._parse_markdown_sections(markdown_content)
+        
+        # Save documentation
+        await self._save_documentation(doc, markdown_content, formats)
+        
+        logger.info(f"Vision-based documentation generated successfully: {doc.id}")
+        
+        return doc
+    
     def _parse_markdown_sections(self, markdown_content: str) -> list[DocSection]:
         """Parse markdown content into sections.
         

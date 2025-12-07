@@ -16,6 +16,8 @@ const isLoadingFiles = ref(false)
 const browserError = ref('')
 const figmaUser = ref<any>(null)
 const isVerifyingToken = ref(false)
+const addingFileKey = ref<string | null>(null)
+const generatingFileKey = ref<string | null>(null)
 
 // Modal state
 const showAddModal = ref(false)
@@ -64,7 +66,7 @@ const loadProjects = async () => {
   
   isLoadingProjects.value = true
   browserError.value = ''
-  projects.value = []
+  // projects.value = [] // Don't clear projects to avoid UI flash
   selectedProject.value = null
   projectFiles.value = []
   
@@ -101,10 +103,13 @@ const selectProject = async (project: any) => {
 }
 
 const addFileFromBrowser = async (file: any) => {
+  addingFileKey.value = file.key
   try {
     await store.addWatchedFile(file.key, file.name)
   } catch (e: any) {
     browserError.value = e.response?.data?.detail || 'Failed to add file'
+  } finally {
+    addingFileKey.value = null
   }
 }
 
@@ -131,10 +136,13 @@ const removeFile = async (fileKey: string) => {
 }
 
 const generateDocs = async (fileKey: string) => {
+  generatingFileKey.value = fileKey
   try {
     await store.generateDocumentation(fileKey)
   } catch (e) {
     console.error('Failed to generate docs:', e)
+  } finally {
+    generatingFileKey.value = null
   }
 }
 
@@ -269,16 +277,19 @@ const formatDate = (dateStr: string | null) => {
                 <p class="text-xs text-text-muted font-mono truncate">{{ file.key }}</p>
               </div>
               
-              <button
-                v-if="!isFileWatched(file.key)"
-                @click="addFileFromBrowser(file)"
-                class="p-2 bg-accent/20 hover:bg-accent/30 text-accent rounded-lg transition-colors flex-shrink-0"
-                title="Add to watch list"
-              >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-              </button>
+            <button
+              v-if="!isFileWatched(file.key)"
+              @click="addFileFromBrowser(file)"
+              class="p-2 bg-accent/20 hover:bg-accent/30 text-accent rounded-lg transition-colors flex-shrink-0"
+              :class="{ 'opacity-50 cursor-not-allowed': addingFileKey === file.key }"
+              :disabled="!!addingFileKey"
+              title="Add to watch list"
+            >
+              <div v-if="addingFileKey === file.key" class="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+              <svg v-else class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </button>
               <span
                 v-else
                 class="px-2 py-1 bg-green-500/20 text-green-400 rounded-lg text-xs font-medium flex-shrink-0"
@@ -361,10 +372,11 @@ const formatDate = (dateStr: string | null) => {
             <button
               @click="generateDocs(file.file_key)"
               class="p-3 bg-accent/20 hover:bg-accent/30 text-accent rounded-xl transition-colors"
-              :disabled="store.isLoading"
+              :disabled="store.isLoading || generatingFileKey === file.file_key"
               title="Generate Documentation"
             >
-              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div v-if="generatingFileKey === file.file_key" class="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin"></div>
+              <svg v-else class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </button>

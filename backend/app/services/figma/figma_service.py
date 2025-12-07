@@ -110,11 +110,13 @@ class FigmaService:
         files = []
         
         for file_data in data.get("files", []):
+            file_type = file_data.get("file_type", "design")  # 'design' or 'jam'
             files.append({
                 "key": file_data.get("key"),
                 "name": file_data.get("name", "Unnamed File"),
                 "thumbnail_url": file_data.get("thumbnail_url"),
                 "last_modified": file_data.get("last_modified"),
+                "file_type": file_type,  # Add file type for filtering
             })
         
         return files
@@ -128,15 +130,80 @@ class FigmaService:
             
         Returns:
             FigmaFile object with file data.
+            
+        Raises:
+            httpx.HTTPStatusError: If the API request fails.
+            ValueError: If file_key is invalid.
         """
+        # Validate file key
+        if not file_key or not isinstance(file_key, str):
+            raise ValueError("File key must be a non-empty string")
+        
+        file_key = file_key.strip()
+        if not file_key:
+            raise ValueError("File key cannot be empty")
+        
+        # Check API token
+        if not self.api_token:
+            raise ValueError("Figma API token is not set. Set FIGMA_API_TOKEN environment variable.")
+        
         client = await self._get_client()
         
         params = {}
         if version:
             params["version"] = version
         
-        response = await client.get(f"/v1/files/{file_key}", params=params)
-        response.raise_for_status()
+        logger.info(f"Fetching Figma file: {file_key} (version: {version or 'latest'})")
+        
+        try:
+            response = await client.get(f"/v1/files/{file_key}", params=params)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            # Log detailed error information
+            error_detail = "Unknown error"
+            try:
+                error_data = e.response.json()
+                error_detail = error_data.get("err", error_data.get("message", str(e.response.text)))
+            except:
+                error_detail = e.response.text[:500] if e.response.text else str(e)
+            
+            logger.error(
+                f"Figma API error for file {file_key}: {e.response.status_code} - {error_detail}"
+            )
+            
+            # Provide more helpful error messages
+            if e.response.status_code == 400:
+                # Check if it's a file type issue (e.g., FigJam)
+                if "file type not supported" in error_detail.lower() or "not supported by this endpoint" in error_detail.lower():
+                    raise httpx.HTTPStatusError(
+                        f"File type not supported: The file '{file_key}' appears to be a FigJam file or another unsupported file type. "
+                        f"This tool only supports Figma Design files. Please use a Figma Design file (.fig) instead of a FigJam file.",
+                        request=e.request,
+                        response=e.response,
+                    ) from e
+                else:
+                    raise httpx.HTTPStatusError(
+                        f"Could not access Figma file '{file_key}': {error_detail}. "
+                        f"Check that the file key is correct and your API token has access to this file.",
+                        request=e.request,
+                        response=e.response,
+                    ) from e
+            elif e.response.status_code == 403:
+                raise httpx.HTTPStatusError(
+                    f"Access denied to Figma file '{file_key}': {error_detail}. "
+                    f"Your API token may not have permission to access this file.",
+                    request=e.request,
+                    response=e.response,
+                ) from e
+            elif e.response.status_code == 404:
+                raise httpx.HTTPStatusError(
+                    f"Figma file '{file_key}' not found: {error_detail}. "
+                    f"Check that the file key is correct.",
+                    request=e.request,
+                    response=e.response,
+                ) from e
+            else:
+                raise
         
         data = response.json()
         
@@ -316,6 +383,48 @@ class FigmaService:
         
         data = response.json()
         return data.get("images", {})
+    
+    async def download_images(
+        self,
+        file_key: str,
+        node_ids: list[str],
+        format: str = "png",
+        scale: float = 2.0,
+    ) -> dict[str, bytes]:
+        """Download rendered images as bytes for specific nodes.
+        
+        Args:
+            file_key: The unique key of the Figma file.
+            node_ids: List of node IDs to render.
+            format: Image format (png, jpg, svg, pdf).
+            scale: Scale factor for the image (higher for better quality).
+            
+        Returns:
+            Dictionary of node ID to image bytes.
+        """
+        # Get image URLs from Figma API
+        image_urls = await self.get_images(file_key, node_ids, format, scale)
+        
+        # Download each image
+        downloaded_images: dict[str, bytes] = {}
+        
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for node_id, image_url in image_urls.items():
+                if not image_url:
+                    logger.warning(f"No image URL returned for node {node_id}")
+                    continue
+                
+                try:
+                    # Download image from CDN (no auth needed for Figma CDN)
+                    response = await client.get(image_url)
+                    response.raise_for_status()
+                    downloaded_images[node_id] = response.content
+                    logger.debug(f"Downloaded image for node {node_id} ({len(response.content)} bytes)")
+                except Exception as e:
+                    logger.error(f"Error downloading image for node {node_id}: {e}")
+                    # Continue with other images even if one fails
+        
+        return downloaded_images
     
     async def get_latest_version(self, file_key: str) -> Optional[FigmaVersion]:
         """Get the latest version of a Figma file.

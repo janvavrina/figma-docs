@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
@@ -14,6 +15,7 @@ from app.models.doc_models import (
     DocFormat,
     DocType,
     GenerateDocsRequest,
+    GenerateVisionDocsRequest,
 )
 from app.models.figma_models import WatchedFile
 from app.services.docs import get_doc_generator
@@ -231,8 +233,61 @@ async def generate_documentation(
             "created_at": doc.created_at.isoformat(),
             "sections_count": len(doc.sections),
         }
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Figma API error generating documentation: {e}")
+        status_code = e.response.status_code if e.response else 500
+        detail = str(e)
+        raise HTTPException(status_code=status_code, detail=detail)
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error generating documentation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/docs/generate-vision")
+async def generate_vision_documentation(
+    request: GenerateVisionDocsRequest,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    """Generate documentation for a Figma file using vision model (PNG analysis)."""
+    generator = get_doc_generator()
+    
+    try:
+        doc = await generator.generate_from_figma_vision(
+            request.file_key,
+            request.doc_type,
+            request.formats,
+            request.vision_model,
+        )
+        
+        # Mark file as having docs generated
+        detector = get_change_detector()
+        for watched in detector.get_watched_files():
+            if watched.file_key == request.file_key:
+                watched.doc_generated = True
+                break
+        
+        return {
+            "id": doc.id,
+            "title": doc.title,
+            "figma_file_key": doc.figma_file_key,
+            "doc_type": doc.doc_type.value,
+            "created_at": doc.created_at.isoformat(),
+            "sections_count": len(doc.sections),
+            "method": "vision",
+        }
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Figma API error generating vision documentation: {e}")
+        status_code = e.response.status_code if e.response else 500
+        detail = str(e)
+        raise HTTPException(status_code=status_code, detail=detail)
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error generating vision documentation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -464,6 +519,87 @@ async def check_model_exists(model_name: str) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"Error checking model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Design Check ---
+
+class DesignCheckRequest(BaseModel):
+    """Request for design-to-implementation comparison."""
+    figma_file_key: str
+    app_url: str
+    frame_mappings: Optional[list[dict[str, str]]] = None
+    check_types: Optional[list[str]] = None  # visual, specs, elements
+
+
+class FrameMappingRequest(BaseModel):
+    """Request for frame mapping."""
+    figma_frame_id: str
+    figma_frame_name: str = ""
+    app_url: str
+
+
+@router.post("/analyze/design-check")
+async def check_design_implementation(request: DesignCheckRequest) -> dict[str, Any]:
+    """Compare Figma design with running application.
+    
+    Performs:
+    - Visual comparison (screenshot diff)
+    - Specification comparison (colors, fonts)
+    - Element existence check
+    """
+    from app.services.agents import get_design_checker
+    
+    checker = get_design_checker()
+    
+    try:
+        result = await checker.check_design(
+            figma_file_key=request.figma_file_key,
+            app_url=request.app_url,
+            frame_mappings=request.frame_mappings,
+            check_types=request.check_types,
+        )
+        return result
+    except RuntimeError as e:
+        # Playwright not installed
+        if "Playwright" in str(e):
+            raise HTTPException(
+                status_code=503,
+                detail="Playwright browser not available. Run 'playwright install chromium' to enable visual comparison."
+            )
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Design check error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await checker.close()
+
+
+@router.get("/analyze/design-check/{file_key}/frames")
+async def get_figma_frames_for_check(file_key: str) -> list[dict[str, Any]]:
+    """Get available Figma frames for design check mapping."""
+    figma = FigmaService()
+    
+    try:
+        file_info = await figma.get_file(file_key)
+        design_info = figma.extract_design_info(file_info)
+        
+        frames = []
+        for page in design_info.get("pages", []):
+            for frame in page.get("frames", []):
+                frames.append({
+                    "id": frame.get("id"),
+                    "name": frame.get("name"),
+                    "page": page.get("name"),
+                    "width": frame.get("width"),
+                    "height": frame.get("height"),
+                })
+        
+        return frames
+    except Exception as e:
+        logger.error(f"Error fetching frames: {e}")
+        raise HTTPException(status_code=400, detail=f"Could not fetch Figma frames: {e}")
+    finally:
+        await figma.close()
 
 
 # --- Configuration ---

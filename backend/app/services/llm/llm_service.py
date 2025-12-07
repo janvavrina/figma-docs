@@ -1,5 +1,6 @@
 """LLM service for interacting with Ollama models via LangChain."""
 
+import base64
 import logging
 from typing import Any, Optional
 
@@ -92,6 +93,94 @@ class LLMService:
             return response
         except Exception as e:
             logger.error(f"Error generating text: {e}")
+            raise
+    
+    async def generate_with_image(
+        self,
+        prompt: str,
+        images: list[bytes],
+        model: Optional[str] = None,
+        stream: bool = False,
+    ) -> str:
+        """Generate text from a prompt with images using Ollama vision API.
+        
+        Args:
+            prompt: The prompt to generate from.
+            images: List of image bytes (PNG/JPEG).
+            model: Optional model override. Defaults to vision model from config.
+            stream: Whether to stream the response.
+            
+        Returns:
+            Generated text.
+        """
+        # Get vision model from config if available, otherwise use provided model or default
+        if model:
+            model_name = model
+        else:
+            # Try to get vision model from config
+            try:
+                if hasattr(settings.llm.models, "vision"):
+                    model_name = settings.llm.models.vision
+                else:
+                    model_name = self.default_model
+            except AttributeError:
+                model_name = self.default_model
+        
+        # Convert images to base64
+        image_b64_list = []
+        for img_bytes in images:
+            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+            image_b64_list.append(img_b64)
+        
+        # Prepare request payload
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "images": image_b64_list,
+            "stream": stream,
+            "options": {
+                "temperature": settings.llm.generation.temperature,
+                "num_predict": settings.llm.generation.max_tokens,
+                "top_p": settings.llm.generation.top_p,
+            },
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                url = f"{self.base_url}/api/generate"
+                headers = self._get_headers()
+                
+                if stream:
+                    # Stream response
+                    async with client.stream(
+                        "POST",
+                        url,
+                        json=payload,
+                        headers=headers,
+                    ) as response:
+                        response.raise_for_status()
+                        full_response = ""
+                        async for line in response.aiter_lines():
+                            if line:
+                                import json
+                                try:
+                                    chunk = json.loads(line)
+                                    if "response" in chunk:
+                                        full_response += chunk["response"]
+                                    if chunk.get("done", False):
+                                        break
+                                except json.JSONDecodeError:
+                                    continue
+                        return full_response
+                else:
+                    # Non-streaming response
+                    response = await client.post(url, json=payload, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    return data.get("response", "")
+                    
+        except Exception as e:
+            logger.error(f"Error generating with image: {e}")
             raise
     
     async def generate_with_template(

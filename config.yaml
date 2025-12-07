@@ -18,6 +18,9 @@ llm:
     
     # Model for app analysis (computer use)
     app_analysis: "gemma3:27b"
+    
+    # Model for vision-based documentation generation (analyzes PNG images)
+    vision: "qwen3-vl:8b"
   
   # Ollama server configuration (can be overridden by OLLAMA_BASE_URL env var)
   ollama_base_url: "${OLLAMA_BASE_URL:-http://localhost:11434}"

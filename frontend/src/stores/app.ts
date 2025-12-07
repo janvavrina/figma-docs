@@ -137,6 +137,26 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function generateVisionDocumentation(fileKey: string, docType: string = 'both', visionModel?: string) {
+    isLoading.value = true
+    error.value = null
+    try {
+      const response = await api.post('/docs/generate-vision', {
+        file_key: fileKey,
+        doc_type: docType,
+        formats: ['markdown', 'html'],
+        vision_model: visionModel,
+      })
+      await fetchDocumentation()
+      return response.data
+    } catch (e: any) {
+      error.value = e.response?.data?.detail || e.message || 'Failed to generate vision documentation'
+      throw e
+    } finally {
+      isLoading.value = false
+    }
+  }
+
   async function getDocumentation(docId: string): Promise<Documentation | null> {
     try {
       const response = await api.get(`/docs/${docId}`)
@@ -193,6 +213,8 @@ export const useAppStore = defineStore('app', () => {
     chatOpen,
     // Getters
     hasWatchedFiles,
+    // Actions
+    generateVisionDocumentation,
     hasDocumentation,
     isChangeDetectionRunning,
     // Actions
