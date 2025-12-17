@@ -23,13 +23,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    # Fonts (replacements for obsolete packages)
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-unifont \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers
+# Install Playwright browsers (without --with-deps since we installed deps manually)
 RUN playwright install chromium
 
 # Create directories

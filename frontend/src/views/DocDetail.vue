@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAppStore, type Documentation } from '@/stores/app'
+import { useAppStore, type Documentation, type Screenshot } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -14,6 +14,9 @@ const chatStore = useChatStore()
 const doc = ref<Documentation | null>(null)
 const isLoading = ref(true)
 const isSplitView = ref(false)
+const selectedScreenshot = ref<Screenshot | null>(null)
+const showLightbox = ref(false)
+const zoomLevel = ref(1)
 
 onMounted(async () => {
   const docId = route.params.id as string
@@ -115,6 +118,39 @@ const regenerateDocs = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+// Screenshot gallery functions
+const getScreenshotUrl = (filename: string) => {
+  return `/screenshots/${filename}`
+}
+
+const openLightbox = (screenshot: Screenshot) => {
+  selectedScreenshot.value = screenshot
+  showLightbox.value = true
+}
+
+const closeLightbox = () => {
+  showLightbox.value = false
+  selectedScreenshot.value = null
+  zoomLevel.value = 1
+}
+
+const hasScreenshots = computed(() => {
+  return doc.value?.screenshots && doc.value.screenshots.length > 0
+})
+
+// Simple zoom controls
+const zoomIn = () => {
+  zoomLevel.value = Math.min(zoomLevel.value + 0.25, 3)
+}
+
+const zoomOut = () => {
+  zoomLevel.value = Math.max(zoomLevel.value - 0.25, 0.5)
+}
+
+const resetZoom = () => {
+  zoomLevel.value = 1
 }
 </script>
 
@@ -229,7 +265,122 @@ const regenerateDocs = async () => {
       <div v-else class="bg-bg-secondary border border-border rounded-2xl p-8">
         <div class="markdown-content prose prose-invert max-w-none" v-html="renderedContent"></div>
       </div>
+
+      <!-- Screenshot Gallery -->
+      <div v-if="hasScreenshots" class="mt-8">
+        <h2 class="text-xl font-semibold text-text-primary mb-4 flex items-center gap-2">
+          <svg class="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Screenshots
+          <span class="text-sm font-normal text-text-muted">({{ doc.screenshots?.length }} images)</span>
+        </h2>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div
+            v-for="(screenshot, index) in doc.screenshots"
+            :key="index"
+            class="group relative aspect-video bg-bg-tertiary rounded-xl overflow-hidden border border-border hover:border-accent/50 transition-all cursor-pointer"
+            @click="openLightbox(screenshot)"
+          >
+            <img
+              :src="getScreenshotUrl(screenshot.filename)"
+              :alt="screenshot.title || 'Screenshot'"
+              class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+              <div class="absolute bottom-0 left-0 right-0 p-3">
+                <p class="text-white text-sm font-medium truncate">{{ screenshot.title || 'Page Screenshot' }}</p>
+                <p class="text-white/70 text-xs truncate">{{ screenshot.url }}</p>
+              </div>
+            </div>
+            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div class="bg-black/50 backdrop-blur-sm rounded-lg p-2">
+                <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- Lightbox Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showLightbox && selectedScreenshot"
+          class="fixed inset-0 z-50 bg-black/95 flex flex-col"
+        >
+          <!-- Top bar -->
+          <div class="flex items-center justify-between p-4 bg-black/50">
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <p class="text-white font-medium text-sm truncate">{{ selectedScreenshot.title || 'Page Screenshot' }}</p>
+              <p class="text-white/60 text-xs truncate">{{ selectedScreenshot.url }}</p>
+            </div>
+
+            <!-- Zoom controls -->
+            <div class="flex items-center gap-1 mx-4">
+              <button @click="zoomOut" class="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Zoom out">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+                </svg>
+              </button>
+              <button @click="resetZoom" class="px-3 py-1 text-white/70 hover:text-white hover:bg-white/10 rounded-lg text-sm font-medium min-w-[60px] transition-colors">
+                {{ Math.round(zoomLevel * 100) }}%
+              </button>
+              <button @click="zoomIn" class="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Zoom in">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Close button -->
+            <button
+              @click="closeLightbox"
+              class="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Scrollable image container -->
+          <div
+            class="flex-1 overflow-auto p-4"
+            @click.self="closeLightbox"
+          >
+            <div class="min-h-full flex items-center justify-center">
+              <img
+                :src="getScreenshotUrl(selectedScreenshot.filename)"
+                :alt="selectedScreenshot.title || 'Screenshot'"
+                class="transition-transform duration-200 ease-out"
+                :style="{
+                  transform: `scale(${zoomLevel})`,
+                  transformOrigin: 'center center',
+                }"
+                draggable="false"
+              />
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

@@ -2,14 +2,19 @@
 
 import asyncio
 import base64
+import json
 import logging
 import os
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urljoin, urlparse
 
+import markdown as md_lib
+
 from app.core.config import settings
+from app.models.doc_models import DocFormat, DocSection, DocType, Documentation
 from app.services.llm import LLMService, get_llm_service
 
 logger = logging.getLogger(__name__)
@@ -28,7 +33,7 @@ class AppAgent:
     
     def __init__(self, llm_service: Optional[LLMService] = None):
         """Initialize the app agent.
-        
+
         Args:
             llm_service: LLMService instance.
         """
@@ -37,6 +42,9 @@ class AppAgent:
         self._visited_urls: set[str] = set()
         self._screenshots_dir = Path(self.config.screenshot_dir)
         self._screenshots_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(settings.documentation.output_dir)
+        (self.output_dir / "markdown").mkdir(parents=True, exist_ok=True)
+        (self.output_dir / "html").mkdir(parents=True, exist_ok=True)
     
     async def analyze_app(
         self,
@@ -80,62 +88,148 @@ class AppAgent:
             page_analyses = await self._crawl_and_analyze(app_url, max_depth)
         
         # Generate overall documentation
-        documentation = await self._generate_app_documentation(
+        markdown_content = await self._generate_app_documentation(
             app_url, page_analyses
         )
-        
+
+        # Extract app name from URL
+        app_name = parsed.netloc.replace("www.", "").split(".")[0].title()
+
+        # Create and save documentation object (same as Figma docs)
+        doc = Documentation(
+            id=str(uuid.uuid4()),
+            figma_file_key=f"app:{parsed.netloc}",  # Use app: prefix for app analysis
+            figma_file_name=app_name,
+            title=f"{app_name} Documentation",
+            description=f"Auto-generated documentation from app analysis",
+            doc_type=DocType.USER,
+            figma_version=datetime.now().strftime("%Y%m%d%H%M%S"),
+        )
+
+        # Parse markdown into sections
+        doc.sections = self._parse_markdown_sections(markdown_content)
+
+        # Collect screenshots from page analyses
+        screenshots = []
+        for page in page_analyses:
+            if page.get("screenshot"):
+                screenshot_path = Path(page["screenshot"])
+                if screenshot_path.exists():
+                    screenshots.append({
+                        "filename": screenshot_path.name,
+                        "url": page.get("url", ""),
+                        "title": page.get("title", ""),
+                    })
+
+        # Attach screenshots to doc for saving
+        doc._screenshots = screenshots
+
+        # Save documentation to files
+        await self._save_documentation(doc, markdown_content)
+
+        logger.info(f"App documentation saved: {doc.id}")
+
         return {
+            "id": doc.id,
             "app_url": app_url,
+            "title": doc.title,
+            "figma_file_key": doc.figma_file_key,
+            "figma_file_name": doc.figma_file_name,
+            "doc_type": doc.doc_type.value,
             "pages_analyzed": len(page_analyses),
-            "pages": page_analyses,
-            "documentation": documentation,
-            "screenshots_dir": str(self._screenshots_dir),
+            "created_at": doc.created_at.isoformat(),
         }
     
     async def _analyze_page(self, url: str) -> dict[str, Any]:
-        """Analyze a single page.
-        
+        """Analyze a single page using screenshot + VLM.
+
         Args:
             url: URL of the page.
-            
+
         Returns:
             Page analysis dictionary.
         """
         logger.info(f"Analyzing page: {url}")
-        
+
+        page_info = {"title": "", "elements": {}, "links": [], "forms": []}
+        screenshot_path = None
+        description = ""
+        http_success = False
+
+        # Try to fetch page content for HTML parsing
         try:
-            # Fetch page content
             import httpx
-            
+
             async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 html_content = response.text
-            
-            # Extract page info
+
+            # Extract page info from HTML
             page_info = self._extract_page_info(html_content, url)
-            
-            # Generate description using LLM
-            description = await self._describe_page(page_info)
-            
-            return {
-                "url": url,
-                "title": page_info.get("title", ""),
-                "status": "success",
-                "elements": page_info.get("elements", {}),
-                "links": page_info.get("links", []),
-                "forms": page_info.get("forms", []),
-                "description": description,
-            }
-            
+            http_success = True
         except Exception as e:
-            logger.error(f"Error analyzing {url}: {e}")
+            logger.warning(f"HTTP fetch failed for {url}: {e}, will try screenshot")
+
+        # Take screenshot if enabled (even if HTTP failed)
+        if self.config.take_screenshots:
+            screenshot_path = await self.take_screenshot(url)
+
+            if screenshot_path:
+                # Use VLM to analyze screenshot
+                try:
+                    with open(screenshot_path, "rb") as f:
+                        screenshot_bytes = f.read()
+
+                    vlm_prompt = f"""Analyze this screenshot of a web page.
+
+Page Title: {page_info.get('title', 'Unknown')}
+URL: {url}
+
+Describe in detail:
+1. What is the main purpose of this page?
+2. What are the key UI elements visible (buttons, forms, navigation, content areas)?
+3. What actions can a user take on this page?
+4. What is the overall design style and layout?
+
+Be concise but thorough. Focus on user-relevant information."""
+
+                    description = await self.llm_service.generate_with_image(
+                        prompt=vlm_prompt,
+                        images=[screenshot_bytes],
+                        model=settings.get_model_for_task("app_analysis"),
+                    )
+                    logger.info(f"VLM analysis complete for {url}")
+                except Exception as e:
+                    logger.warning(f"VLM analysis failed, falling back to text: {e}")
+                    if http_success:
+                        description = await self._describe_page(page_info)
+                    else:
+                        description = f"Page at {url} - screenshot captured but analysis failed."
+            elif http_success:
+                description = await self._describe_page(page_info)
+            else:
+                description = f"Could not analyze page at {url}"
+        elif http_success:
+            description = await self._describe_page(page_info)
+        else:
             return {
                 "url": url,
                 "status": "error",
-                "error": str(e),
+                "error": "Could not fetch page and screenshots disabled",
             }
-    
+
+        return {
+            "url": url,
+            "title": page_info.get("title", ""),
+            "status": "success" if (http_success or screenshot_path) else "partial",
+            "elements": page_info.get("elements", {}),
+            "links": page_info.get("links", []),
+            "forms": page_info.get("forms", []),
+            "description": description,
+            "screenshot": screenshot_path,
+        }
+
     def _extract_page_info(self, html: str, url: str) -> dict[str, Any]:
         """Extract information from HTML content.
         
@@ -400,20 +494,164 @@ Be practical and user-focused."""
         )
     
     async def take_screenshot(self, url: str, filename: Optional[str] = None) -> Optional[str]:
-        """Take a screenshot of a page.
-        
-        Note: This is a placeholder. Full implementation would use
-        Playwright, Puppeteer, or similar browser automation tool.
-        
+        """Take a screenshot of a page using Playwright.
+
         Args:
             url: URL to screenshot.
             filename: Optional filename.
-            
+
         Returns:
             Path to screenshot or None.
         """
-        # This would require browser automation
-        # For now, return None and log
-        logger.info(f"Screenshot requested for {url} - requires browser automation")
-        return None
+        try:
+            from playwright.async_api import async_playwright
+
+            if not filename:
+                # Generate filename from URL
+                parsed = urlparse(url)
+                safe_path = parsed.path.replace("/", "_").strip("_") or "index"
+                filename = f"{parsed.netloc}_{safe_path}.png"
+
+            screenshot_path = self._screenshots_dir / filename
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": 1920, "height": 1080})
+
+                await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.screenshot(path=str(screenshot_path), full_page=True)
+                await browser.close()
+
+            logger.info(f"Screenshot saved: {screenshot_path}")
+            return str(screenshot_path)
+
+        except Exception as e:
+            logger.error(f"Failed to take screenshot of {url}: {e}")
+            return None
+
+    def _parse_markdown_sections(self, markdown_content: str) -> list[DocSection]:
+        """Parse markdown content into sections.
+
+        Args:
+            markdown_content: Raw markdown content.
+
+        Returns:
+            List of DocSection objects.
+        """
+        sections = []
+        current_section = None
+        current_content = []
+        section_order = 0
+
+        for line in markdown_content.split("\n"):
+            # Check for headers
+            if line.startswith("## "):
+                # Save previous section
+                if current_section:
+                    current_section.content = "\n".join(current_content).strip()
+                    sections.append(current_section)
+
+                # Start new section
+                title = line[3:].strip()
+                current_section = DocSection(
+                    id=str(uuid.uuid4()),
+                    title=title,
+                    content="",
+                    order=section_order,
+                )
+                current_content = []
+                section_order += 1
+            elif current_section:
+                current_content.append(line)
+
+        # Save last section
+        if current_section:
+            current_section.content = "\n".join(current_content).strip()
+            sections.append(current_section)
+
+        return sections
+
+    async def _save_documentation(
+        self,
+        doc: Documentation,
+        markdown_content: str,
+    ) -> None:
+        """Save documentation to files.
+
+        Args:
+            doc: Documentation object.
+            markdown_content: Raw markdown content.
+        """
+        # Create safe filename
+        safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in doc.figma_file_name)
+        safe_name = safe_name.replace(" ", "_").lower()
+
+        # Save markdown
+        md_path = self.output_dir / "markdown" / f"{safe_name}.md"
+        md_path.write_text(markdown_content)
+        logger.info(f"Saved markdown: {md_path}")
+
+        # Save HTML
+        html_content = self._convert_to_html(doc, markdown_content)
+        html_path = self.output_dir / "html" / f"{safe_name}.html"
+        html_path.write_text(html_content)
+        logger.info(f"Saved HTML: {html_path}")
+
+        # Save metadata JSON
+        meta_path = self.output_dir / "markdown" / f"{safe_name}_meta.json"
+        meta_data = {
+            "id": doc.id,
+            "figma_file_key": doc.figma_file_key,
+            "figma_file_name": doc.figma_file_name,
+            "title": doc.title,
+            "doc_type": doc.doc_type.value,
+            "created_at": doc.created_at.isoformat(),
+            "updated_at": doc.updated_at.isoformat(),
+            "version": doc.version,
+            "figma_version": doc.figma_version,
+            "sections": [
+                {"id": s.id, "title": s.title, "order": s.order}
+                for s in doc.sections
+            ],
+            "screenshots": getattr(doc, "_screenshots", []),
+        }
+        meta_path.write_text(json.dumps(meta_data, indent=2))
+
+    def _convert_to_html(self, doc: Documentation, markdown_content: str) -> str:
+        """Convert markdown to HTML.
+
+        Args:
+            doc: Documentation object.
+            markdown_content: Raw markdown content.
+
+        Returns:
+            HTML string.
+        """
+        # Convert markdown to HTML
+        html_content = md_lib.markdown(
+            markdown_content,
+            extensions=["fenced_code", "tables", "toc"],
+        )
+
+        # Simple HTML template
+        return f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{doc.title}</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; background: #0f0f0f; color: #e8e8e8; }}
+        h1, h2, h3 {{ color: #e8e8e8; }}
+        a {{ color: #6366f1; }}
+        code {{ background: #1e1e1e; padding: 0.2rem 0.5rem; border-radius: 4px; }}
+        pre {{ background: #1e1e1e; padding: 1rem; border-radius: 8px; overflow-x: auto; }}
+    </style>
+</head>
+<body>
+    <h1>{doc.title}</h1>
+    <p><em>Generated: {doc.created_at.strftime("%Y-%m-%d %H:%M")}</em></p>
+    {html_content}
+</body>
+</html>'''
 

@@ -83,6 +83,19 @@ try:
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
+# Mount screenshots directory
+try:
+    from pathlib import Path
+    screenshots_dir = Path(settings.app_agent.screenshot_dir)
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+    app.mount(
+        "/screenshots",
+        StaticFiles(directory=str(screenshots_dir)),
+        name="screenshots",
+    )
+except Exception as e:
+    logger.warning(f"Could not mount screenshots directory: {e}")
+
 
 @app.get("/")
 async def root():

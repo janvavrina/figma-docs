@@ -53,4 +53,5 @@ htmlcov/
 *.egg
 *.whl
 
+.claude/
 docs/

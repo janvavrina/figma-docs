@@ -242,14 +242,17 @@ class LLMService:
     
     def _get_documentation_template(self, doc_type: str) -> str:
         """Get the documentation generation template.
-        
+
         Args:
             doc_type: Type of documentation to generate.
-            
+
         Returns:
             Prompt template string.
         """
-        base_template = """You are a technical documentation writer. Generate comprehensive documentation for the following Figma design.
+        base_template = """You are an expert technical documentation writer specializing in UI/UX design documentation.
+Your task is to generate COMPREHENSIVE and DETAILED documentation for the following Figma design.
+
+IMPORTANT: Generate extensive, thorough documentation. Do NOT be brief. Each section should be detailed and informative.
 
 # Design: {file_name}
 
@@ -271,51 +274,194 @@ class LLMService:
 ---
 
 """
-        
-        if doc_type == "user":
-            base_template += """Generate USER documentation that explains:
-1. What each screen/page is for
-2. How to navigate between screens
-3. What each UI element does
-4. User workflows and interactions
-5. Tips for using the application
 
-Write in a friendly, accessible tone suitable for end users.
-Use clear headings and bullet points.
-Include descriptions of visual elements and their purpose."""
+        if doc_type == "user":
+            base_template += """Generate COMPREHENSIVE USER documentation. Be DETAILED and THOROUGH in each section.
+
+Required sections (write extensively about each):
+
+## 1. Application Overview
+- Detailed description of what this application does
+- Target audience and use cases
+- Key features and capabilities
+
+## 2. Screen-by-Screen Guide
+For EACH screen/page, provide:
+- Screen name and purpose
+- Detailed description of all visible elements
+- Step-by-step instructions for using the screen
+- What happens when user interacts with each element
+- Common tasks that can be performed
+
+## 3. Navigation Guide
+- How to move between screens
+- Navigation patterns used (tabs, menus, buttons)
+- Breadcrumb structure if applicable
+- Quick navigation tips
+
+## 4. User Workflows
+- Common task flows (e.g., "How to create a new item")
+- Step-by-step guides for key actions
+- Expected outcomes for each workflow
+
+## 5. UI Elements Reference
+- Description of all button types and their functions
+- Form fields and input requirements
+- Icons and their meanings
+- Status indicators and notifications
+
+## 6. Tips and Best Practices
+- Keyboard shortcuts if applicable
+- Time-saving features
+- Common mistakes to avoid
+- Helpful hints for new users
+
+Write in a friendly, accessible tone. Use clear headings, numbered steps, and bullet points.
+Be THOROUGH - aim for at least 1500-2000 words of documentation."""
 
         elif doc_type == "dev":
-            base_template += """Generate DEVELOPER documentation that explains:
-1. Component structure and hierarchy
-2. Design tokens (colors, spacing, typography)
-3. Component specifications (dimensions, styles)
-4. Interaction states and behaviors
-5. Implementation guidelines
-6. Accessibility considerations
+            base_template += """Generate COMPREHENSIVE DEVELOPER documentation. Be DETAILED and THOROUGH in each section.
 
-Write in a technical tone suitable for developers.
-Include code-relevant details like CSS values, component names, and hierarchy."""
+Required sections (write extensively about each):
+
+## 1. Design System Overview
+- Architecture of the design system
+- Design principles and patterns used
+- Naming conventions
+
+## 2. Component Library
+For EACH component, provide:
+- Component name and purpose
+- Props/variants if applicable
+- Visual states (default, hover, active, disabled, error)
+- Sizing specifications
+- Usage guidelines
+- Code implementation hints
+
+## 3. Design Tokens
+### Colors
+- Primary, secondary, accent colors with hex/RGB values
+- Semantic color usage (success, error, warning, info)
+- Background colors and their use cases
+- Text colors and contrast ratios
+
+### Typography
+- Font families and fallbacks
+- Font sizes scale (in px, rem, or design system units)
+- Line heights
+- Font weights
+- Text styles for headings, body, captions
+
+### Spacing
+- Spacing scale (4px, 8px, 16px, etc.)
+- Padding conventions
+- Margin conventions
+- Grid system if applicable
+
+### Borders & Shadows
+- Border radius values
+- Border widths and styles
+- Shadow definitions (box-shadow values)
+
+## 4. Layout Specifications
+- Grid system details
+- Breakpoints for responsive design
+- Container widths
+- Flex/Grid layouts used
+
+## 5. Component Specifications
+For each major frame/component provide:
+- Exact dimensions (width x height)
+- Padding and margins
+- Background colors
+- Border specifications
+- Typography used
+
+## 6. Interaction States
+- Hover states and transitions
+- Focus states for accessibility
+- Active/pressed states
+- Loading states
+- Error states
+
+## 7. Accessibility Guidelines
+- Color contrast requirements
+- Focus indicators
+- ARIA labels and roles
+- Keyboard navigation requirements
+
+## 8. Implementation Notes
+- Suggested CSS/styling approach
+- Component hierarchy recommendations
+- Reusable patterns identified
+- Performance considerations
+
+Write in technical language suitable for developers.
+Be THOROUGH - aim for at least 2000-2500 words of documentation."""
 
         else:  # both
-            base_template += """Generate comprehensive documentation that includes BOTH user and developer perspectives:
+            base_template += """Generate COMPREHENSIVE documentation for BOTH users and developers. Be DETAILED and THOROUGH.
 
-## User Guide
-- What each screen/page is for
-- How to navigate and use the application
-- UI element descriptions and interactions
+IMPORTANT: For EACH major screen/frame, create a section with BOTH perspectives using this EXACT format:
 
-## Developer Guide  
-- Component structure and specifications
-- Design tokens and style guide
-- Implementation guidelines
-- Technical details for development
+### [Screen/Frame Name]
 
-Write clearly with appropriate sections for each audience."""
+## User Perspective
+
+[Detailed user documentation for this screen including:]
+- What this screen does and its purpose
+- All visible elements and their functions
+- Step-by-step usage instructions
+- How to navigate from/to this screen
+- Tips for using this screen effectively
+
+## Developer Perspective
+
+[Detailed developer documentation for this screen including:]
+- Component structure and hierarchy
+- Design tokens used (colors with hex values, typography, spacing)
+- Exact dimensions and specifications
+- States (default, hover, active, disabled)
+- Implementation notes and CSS guidelines
+- Accessibility considerations
+
+---
+
+After all screen sections, include these summary sections:
+
+### Design System Summary
+
+## User Perspective
+
+- Application overview
+- Key features summary
+- Navigation patterns
+- Common workflows
+- Tips and best practices
+
+## Developer Perspective
+
+- Complete color palette with hex values
+- Typography scale
+- Spacing system
+- Component library overview
+- Global accessibility guidelines
+- Implementation best practices
+
+Write clearly and be THOROUGH - aim for at least 2500-3000 words total documentation.
+Each screen should have substantial content in BOTH perspectives."""
 
         base_template += """
 
-Generate the documentation in Markdown format with proper headings, lists, and formatting.
-Be thorough but concise. Focus on practical, useful information."""
+FORMATTING REQUIREMENTS:
+- Use Markdown format with proper headings (##, ###, ####)
+- Use bullet points and numbered lists for clarity
+- Include tables where appropriate for specifications
+- Use code blocks for CSS values or technical specifications
+- Add horizontal rules (---) between major sections
+
+REMEMBER: Generate EXTENSIVE documentation. Do not summarize or abbreviate.
+Each section should be detailed and comprehensive."""
 
         return base_template
     

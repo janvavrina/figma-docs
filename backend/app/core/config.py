@@ -90,6 +90,14 @@ class AppAgentConfig(BaseModel):
     action_delay: float = 1.0
 
 
+class VectorDbConfig(BaseModel):
+    """Vector database (ChromaDB) configuration."""
+    host: str = "chromadb"
+    port: int = 8000
+    collection_name: str = "figma_docs"
+    embedding_model: str = "nomic-embed-text"
+
+
 class LoggingConfig(BaseModel):
     """Logging configuration."""
     level: str = "INFO"
@@ -124,7 +132,10 @@ class Settings(BaseSettings):
     
     # App agent settings
     app_agent: AppAgentConfig = Field(default_factory=AppAgentConfig)
-    
+
+    # Vector database settings
+    vector_db: VectorDbConfig = Field(default_factory=VectorDbConfig)
+
     # Logging settings
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     

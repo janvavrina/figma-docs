@@ -1,0 +1,52 @@
+# Docker Compose for external Ollama (via ngrok or other URL)
+# Usage: docker-compose -f docker-compose.external.yml up -d
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./docs:/app/docs
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - FIGMA_API_TOKEN=${FIGMA_API_TOKEN}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+    depends_on:
+      chromadb:
+        condition: service_started
+    networks:
+      - figma-docs-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - figma-docs-network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    networks:
+      - figma-docs-network
+
+networks:
+  figma-docs-network:
+    driver: bridge
+
+volumes:
+  chroma-data:

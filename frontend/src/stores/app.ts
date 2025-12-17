@@ -15,6 +15,12 @@ export interface WatchedFile {
   doc_generated: boolean
 }
 
+export interface Screenshot {
+  filename: string
+  url: string
+  title: string
+}
+
 export interface Documentation {
   id: string
   figma_file_key: string
@@ -26,6 +32,7 @@ export interface Documentation {
   version: string
   figma_version: string | null
   content?: string
+  screenshots?: Screenshot[]
 }
 
 export interface SystemStatus {

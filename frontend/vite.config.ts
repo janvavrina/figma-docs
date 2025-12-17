@@ -21,6 +21,10 @@ export default defineConfig({
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+      },
+      '/screenshots': {
+        target: apiTarget,
+        changeOrigin: true,
       }
     }
   }

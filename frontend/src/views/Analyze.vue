@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
+const router = useRouter()
 const api = axios.create({ baseURL: '/api' })
 
 const activeTab = ref<'code' | 'app' | 'design'>('design')
@@ -50,16 +52,20 @@ const analyzeCode = async () => {
 
 const analyzeApp = async () => {
   if (!appUrl.value) return
-  
+
   appLoading.value = true
   appError.value = ''
   appResult.value = null
-  
+
   try {
     const response = await api.post('/analyze/app', {
       app_url: appUrl.value,
     })
     appResult.value = response.data
+    // Redirect to documentation detail page
+    if (response.data.id) {
+      router.push(`/docs/${response.data.id}`)
+    }
   } catch (e: any) {
     appError.value = e.response?.data?.detail || 'Failed to analyze app'
   } finally {
@@ -531,9 +537,30 @@ const getScoreColor = (score: number) => {
           {{ appError }}
         </div>
 
-        <div v-if="appResult" class="mt-6 p-4 bg-bg-tertiary rounded-xl">
-          <h3 class="font-semibold text-text-primary mb-2">Analysis Complete</h3>
-          <pre class="text-sm text-text-secondary overflow-auto">{{ JSON.stringify(appResult, null, 2) }}</pre>
+        <!-- Success message before redirect -->
+        <div v-if="appResult" class="mt-6 p-6 bg-green-500/10 border border-green-500/30 rounded-xl">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-10 h-10 rounded-full bg-green-500/20 flex items-center justify-center">
+              <svg class="w-6 h-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <h3 class="font-semibold text-text-primary">Analysis Complete!</h3>
+              <p class="text-sm text-text-secondary">{{ appResult.title }}</p>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="bg-bg-tertiary rounded-lg p-3">
+              <div class="text-2xl font-bold text-accent">{{ appResult.pages_analyzed }}</div>
+              <div class="text-xs text-text-muted">Pages Analyzed</div>
+            </div>
+            <div class="bg-bg-tertiary rounded-lg p-3">
+              <div class="text-sm font-medium text-text-primary truncate">{{ appResult.app_url }}</div>
+              <div class="text-xs text-text-muted">Source URL</div>
+            </div>
+          </div>
+          <p class="text-sm text-text-muted">Redirecting to documentation...</p>
         </div>
       </div>
     </div>
